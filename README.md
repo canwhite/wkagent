@@ -78,6 +78,18 @@ static validatePath(inputPath, basePath = process.cwd()) {
 const allowedCommands = new Set(['ls', 'cat', 'pwd', 'echo', 'grep']);
 ```
 
+### 5.llm 消息流向
+
+```
+  LLM消息 → addMessage() → 短期记忆 + LLM消息队列
+                            ↓
+                      92% token阈值触发
+                            ↓
+                      compressMemory() → 8段式压缩
+                            ↓
+                      getLLMContext() → 提供给LLM
+```
+
 ## 🛡️ 安全特性
 
 - **路径遍历防护**: 所有文件操作都经过路径验证
