@@ -78,7 +78,7 @@ static validatePath(inputPath, basePath = process.cwd()) {
 const allowedCommands = new Set(['ls', 'cat', 'pwd', 'echo', 'grep']);
 ```
 
-### 5.llm 消息流向
+### 5.context 管理
 
 ```
   LLM消息 → addMessage() → 短期记忆 + LLM消息队列
