@@ -1,0 +1,30 @@
+{
+  "name": "work-agent-js",
+  "version": "1.0.0",
+  "description": "基于course.md架构的JS Agent系统，集成LLM增强智能决策能力",
+  "main": "work-agent.js",
+  "scripts": {
+    "test": "node examples.js --quick",
+    "dev": "node examples.js --all",
+    "start": "node -e \"const {quickTest} = require('./examples'); quickTest()\""
+  },
+  "keywords": [
+    "agent",
+    "ai",
+    "llm",
+    "claude",
+    "automation",
+    "course-md",
+    "javascript",
+    "typescript"
+  ],
+  "author": "Work Agent系统",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "glob": "^10.3.10"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
