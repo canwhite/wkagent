@@ -3,7 +3,7 @@
  * 展示如何基于course.md架构使用JS Agent系统
  */
 
-const WkAgent = require("./work-agent");
+const WkAgent = require("../work-agent");
 const path = require("path");
 
 /**

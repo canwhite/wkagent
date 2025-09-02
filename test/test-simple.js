@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const WkAgent = require("./work-agent");
+const WkAgent = require("../work-agent");
 
 async function simpleTest() {
   console.log("🧪 简单测试 WkAgent + DeepSeek...\n");

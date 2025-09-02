@@ -3,8 +3,8 @@
  * 展示基于course.md架构的I2A子Agent功能
  */
 
-const WkAgent = require("./work-agent");
-const { SubAgent, SubAgentManager } = require("./sub-agent");
+const WkAgent = require("../work-agent");
+const { SubAgent, SubAgentManager } = require("../sub-agent");
 
 /**
  * 示例1：基础SubAgent使用

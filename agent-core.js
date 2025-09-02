@@ -4,6 +4,8 @@
  */
 
 require("dotenv").config();
+const path = require("path");
+const fs = require("fs");
 
 /**
  * Enhanced Memory System based on Claude Workflow 3-tier architecture
@@ -91,6 +93,64 @@ class AgentMemory {
 }
 
 /**
+ * 安全工具 - 敏感信息处理
+ */
+class SecurityLogger {
+  static sanitizeError(error) {
+    if (typeof error !== "string") {
+      error = error.message || error.toString();
+    }
+
+    // 移除API密钥等敏感信息
+    const sensitivePatterns = [
+      /api[_-]?key\s*[:=]\s*['"]?[a-zA-Z0-9]{20,}['"]?/gi,
+      /token\s*[:=]\s*['"]?[a-zA-Z0-9]{20,}['"]?/gi,
+      /password\s*[:=]\s*['"]?[^'"\s]+['"]?/gi,
+      /secret\s*[:=]\s*['"]?[^'"\s]+['"]?/gi,
+      /bearer\s+[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+/gi,
+    ];
+
+    let sanitized = error;
+    sensitivePatterns.forEach((pattern) => {
+      sanitized = sanitized.replace(pattern, "[REDACTED]");
+    });
+
+    return sanitized;
+  }
+
+  static sanitizeObject(obj) {
+    const sanitized = JSON.parse(JSON.stringify(obj));
+    const sensitiveKeys = [
+      "apiKey",
+      "api_key",
+      "token",
+      "password",
+      "secret",
+      "auth",
+    ];
+
+    function sanitizeRecursive(target) {
+      if (typeof target === "object" && target !== null) {
+        Object.keys(target).forEach((key) => {
+          if (
+            sensitiveKeys.some((sensitive) =>
+              key.toLowerCase().includes(sensitive)
+            )
+          ) {
+            target[key] = "[REDACTED]";
+          } else if (typeof target[key] === "object") {
+            sanitizeRecursive(target[key]);
+          }
+        });
+      }
+    }
+
+    sanitizeRecursive(sanitized);
+    return sanitized;
+  }
+}
+
+/**
  * LLM服务集成 - DeepSeek API
  */
 class LLMService {
@@ -123,6 +183,7 @@ class LLMService {
 
       return response.ok;
     } catch (error) {
+      console.error("LLM健康检查失败:", SecurityLogger.sanitizeError(error));
       return false;
     }
   }
@@ -159,9 +220,9 @@ class LLMService {
   }
 
   /**
-   * 调用LLM
+   * 调用LLM（带重试机制）
    */
-  async callLLM(prompt, systemPrompt = "") {
+  async callLLM(prompt, systemPrompt = "", maxRetries = 3, delay = 1000) {
     try {
       const messages = [];
 
@@ -192,8 +253,32 @@ class LLMService {
       const data = await response.json();
       return data.choices[0].message.content;
     } catch (error) {
-      console.error("LLM调用失败:", error);
-      throw error;
+      const sanitizedError = SecurityLogger.sanitizeError(error);
+
+      if (maxRetries > 0) {
+        console.warn(
+          `LLM调用失败，${maxRetries}次重试后重试...`,
+          sanitizedError
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return this.callLLM(prompt, systemPrompt, maxRetries - 1, delay * 2);
+      }
+
+      console.error("LLM调用最终失败:", sanitizedError);
+
+      // 提供更友好的错误信息
+      if (error.message?.includes("401")) {
+        throw new Error("LLM认证失败，请检查API密钥是否正确");
+      } else if (error.message?.includes("429")) {
+        throw new Error("LLM服务请求过于频繁，请稍后重试");
+      } else if (
+        error.message?.includes("network") ||
+        error.message?.includes("fetch")
+      ) {
+        throw new Error("网络连接失败，请检查网络配置");
+      } else {
+        throw new Error("LLM服务暂时不可用，请稍后重试");
+      }
     }
   }
 
@@ -257,6 +342,52 @@ class LLMService {
 }
 
 /**
+ * 安全工具 - 路径验证和清理
+ */
+class SecurityUtils {
+  static validatePath(inputPath, basePath = process.cwd()) {
+    // 清理和规范化路径
+    const normalizedPath = path.normalize(inputPath);
+    const resolvedPath = path.resolve(basePath, normalizedPath);
+
+    // 确保路径在允许的基目录内
+    const relative = path.relative(basePath, resolvedPath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error("路径不允许访问父目录或系统路径");
+    }
+
+    // 检查文件是否存在及权限
+    try {
+      fs.accessSync(resolvedPath, fs.constants.F_OK);
+    } catch (error) {
+      // 如果是写入操作，检查目录权限
+      const dir = path.dirname(resolvedPath);
+      try {
+        fs.accessSync(dir, fs.constants.W_OK);
+      } catch (dirError) {
+        throw new Error("没有权限访问指定路径");
+      }
+    }
+
+    return resolvedPath;
+  }
+
+  static sanitizeFilename(filename) {
+    // 移除危险字符
+    return filename.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_");
+  }
+
+  static isSafePath(inputPath) {
+    try {
+      this.validatePath(inputPath);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+}
+
+/**
  * 工具注册器
  */
 class ToolRegistry {
@@ -271,55 +402,105 @@ class ToolRegistry {
   initializeDefaultTools() {
     this.register("read", {
       name: "read",
-      description: "读取文件内容",
+      description: "安全读取文件内容",
       execute: async (params) => {
         const fs = require("fs").promises;
         try {
-          const content = await fs.readFile(params.path, "utf-8");
-          return { success: true, content, type: "file_content" };
+          const safePath = SecurityUtils.validatePath(params.path);
+          const content = await fs.readFile(safePath, "utf-8");
+          return {
+            success: true,
+            content,
+            type: "file_content",
+            path: safePath,
+          };
         } catch (error) {
           return { success: false, error: error.message };
         }
       },
       schema: {
-        path: { type: "string", required: true, description: "文件路径" },
+        path: {
+          type: "string",
+          required: true,
+          description: "文件路径（相对路径或工作目录内路径）",
+        },
       },
     });
 
     this.register("write", {
       name: "write",
-      description: "写入文件内容",
+      description: "安全写入文件内容",
       execute: async (params) => {
         const fs = require("fs").promises;
         try {
-          await fs.writeFile(params.path, params.content, "utf-8");
-          return { success: true, message: "文件写入成功" };
+          const safePath = SecurityUtils.validatePath(params.path);
+          const safeContent = params.content || "";
+
+          // 检查文件大小限制（10MB）
+          const contentSize = Buffer.byteLength(safeContent, "utf8");
+          if (contentSize > 10 * 1024 * 1024) {
+            return { success: false, error: "文件内容超过10MB限制" };
+          }
+
+          await fs.writeFile(safePath, safeContent, "utf-8");
+          return { success: true, message: "文件写入成功", path: safePath };
         } catch (error) {
           return { success: false, error: error.message };
         }
       },
       schema: {
-        path: { type: "string", required: true, description: "文件路径" },
+        path: {
+          type: "string",
+          required: true,
+          description: "文件路径（相对路径或工作目录内路径）",
+        },
         content: { type: "string", required: true, description: "文件内容" },
       },
     });
 
     this.register("edit", {
       name: "edit",
-      description: "编辑文件内容",
+      description: "安全编辑文件内容",
       execute: async (params) => {
         const fs = require("fs").promises;
         try {
-          let content = await fs.readFile(params.path, "utf-8");
-          content = content.replace(params.oldString, params.newString);
-          await fs.writeFile(params.path, content, "utf-8");
-          return { success: true, message: "文件编辑成功" };
+          const safePath = SecurityUtils.validatePath(params.path);
+
+          // 检查文件大小限制
+          const stats = await fs.stat(safePath);
+          if (stats.size > 10 * 1024 * 1024) {
+            return { success: false, error: "文件超过10MB限制" };
+          }
+
+          let content = await fs.readFile(safePath, "utf-8");
+
+          // 限制替换操作的范围
+          if (params.oldString.length === 0) {
+            return { success: false, error: "oldString不能为空" };
+          }
+
+          // 检查替换后的文件大小
+          const newContent = content.replace(
+            params.oldString,
+            params.newString
+          );
+          const newSize = Buffer.byteLength(newContent, "utf8");
+          if (newSize > 10 * 1024 * 1024) {
+            return { success: false, error: "替换后文件超过10MB限制" };
+          }
+
+          await fs.writeFile(safePath, newContent, "utf-8");
+          return { success: true, message: "文件编辑成功", path: safePath };
         } catch (error) {
           return { success: false, error: error.message };
         }
       },
       schema: {
-        path: { type: "string", required: true, description: "文件路径" },
+        path: {
+          type: "string",
+          required: true,
+          description: "文件路径（相对路径或工作目录内路径）",
+        },
         oldString: {
           type: "string",
           required: true,
@@ -331,20 +512,85 @@ class ToolRegistry {
 
     this.register("bash", {
       name: "bash",
-      description: "执行bash命令",
+      description: "执行安全的bash命令",
       execute: async (params) => {
-        const { exec } = require("child_process");
-        const util = require("util");
-        const execAsync = util.promisify(exec);
+        const { spawn } = require("child_process");
+
+        // 命令白名单和参数验证
+        const allowedCommands = new Set([
+          "ls",
+          "cat",
+          "pwd",
+          "echo",
+          "grep",
+          "find",
+          "head",
+          "tail",
+          "wc",
+          "sort",
+          "uniq",
+        ]);
 
         try {
-          const { stdout, stderr } = await execAsync(params.command);
-          return {
-            success: true,
-            output: stdout,
-            error: stderr,
-            type: "command_output",
-          };
+          // 解析命令，只允许简单命令
+          const parts = params.command.trim().split(/\s+/);
+          const cmd = parts[0];
+          const args = parts.slice(1);
+
+          if (!allowedCommands.has(cmd)) {
+            return {
+              success: false,
+              error: `命令 '${cmd}' 不在允许列表中`,
+            };
+          }
+
+          // 验证参数不包含危险字符
+          const dangerousChars = /[;&|`$(){}[\]<>]/;
+          for (const arg of args) {
+            if (dangerousChars.test(arg)) {
+              return {
+                success: false,
+                error: `参数包含危险字符: ${arg}`,
+              };
+            }
+          }
+
+          return new Promise((resolve) => {
+            const child = spawn(cmd, args, {
+              stdio: "pipe",
+              cwd: process.cwd(),
+              env: { ...process.env, PATH: process.env.PATH },
+            });
+
+            let stdout = "";
+            let stderr = "";
+
+            child.stdout.on("data", (data) => {
+              stdout += data.toString();
+            });
+            child.stderr.on("data", (data) => {
+              stderr += data.toString();
+            });
+
+            child.on("close", (code) => {
+              resolve({
+                success: code === 0,
+                output: stdout,
+                error: stderr,
+                exitCode: code,
+                type: "command_output",
+              });
+            });
+
+            // 超时保护
+            setTimeout(() => {
+              child.kill();
+              resolve({
+                success: false,
+                error: "命令执行超时（30秒）",
+              });
+            }, 30000);
+          });
         } catch (error) {
           return { success: false, error: error.message };
         }
@@ -353,7 +599,7 @@ class ToolRegistry {
         command: {
           type: "string",
           required: true,
-          description: "要执行的命令",
+          description: "要执行的命令（限白名单命令）",
         },
       },
     });

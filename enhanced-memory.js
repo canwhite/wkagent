@@ -7,19 +7,20 @@
 class EnhancedAgentMemory {
   constructor() {
     // 三层记忆架构
-    this.shortTerm = [];      // 短期记忆：当前会话 + LLM消息
-    this.mediumTerm = [];     // 中期记忆：8段式结构化压缩
-    this.longTerm = {};       // 长期记忆：项目配置和持久数据
-    
+    this.shortTerm = []; // 短期记忆：当前会话 + LLM消息
+    this.mediumTerm = []; // 中期记忆：8段式结构化压缩
+    this.longTerm = {}; // 长期记忆：项目配置和持久数据
+
     // LLM消息管理
-    this.llmMessages = [];    // 完整的LLM对话历史
-    this.messagesByRole = {   // 按角色分类的消息
+    this.llmMessages = []; // 完整的LLM对话历史
+    this.messagesByRole = {
+      // 按角色分类的消息
       user: [],
       assistant: [],
       system: [],
-      tool: []
+      tool: [],
     };
-    
+
     // 上下文统计
     this.contextStats = {
       totalTokens: 0,
@@ -28,15 +29,25 @@ class EnhancedAgentMemory {
       toolCalls: 0,
       compressionCount: 0,
       sessionStart: Date.now(),
-      lastCompressTime: Date.now()
+      lastCompressTime: Date.now(),
     };
-    
+
     // 压缩配置（基于92%阈值）
     this.compressionConfig = {
-      tokenThreshold: 4000 * 0.92,  // 92% of 4k context
+      tokenThreshold: 4000 * 0.92, // 92% of 4k context
       messageThreshold: 100,
       compressionRatio: 0.8,
-      maxContextSize: 4000
+      maxContextSize: 4000,
+      maxMemorySize: 50 * 1024 * 1024, // 50MB内存限制
+      maxMessages: 1000, // 最大消息数限制
+      maxMediumTerm: 100, // 中期记忆最大条目
+    };
+
+    // 内存监控
+    this.memoryMonitor = {
+      lastCheck: Date.now(),
+      checkInterval: 60000, // 每分钟检查一次
+      cleanupThreshold: 0.8, // 达到80%限制时清理
     };
   }
 
@@ -48,21 +59,23 @@ class EnhancedAgentMemory {
       ...message,
       id: this.generateId(),
       timestamp: Date.now(),
-      tokenCount: this.estimateTokens(message.content || ''),
-      role: message.role || 'system',
-      type: message.type || 'general',
+      tokenCount: this.estimateTokens(message.content || ""),
+      role: message.role || "system",
+      type: message.type || "general",
       metadata: {
         tool: message.tool,
         functionCall: message.function_call,
-        finishReason: message.finish_reason
-      }
+        finishReason: message.finish_reason,
+      },
     };
 
     // 添加到短期记忆
     this.shortTerm.push(enrichedMessage);
-    
+
     // 添加到LLM消息管理
-    if (['user', 'assistant', 'system', 'tool'].includes(enrichedMessage.role)) {
+    if (
+      ["user", "assistant", "system", "tool"].includes(enrichedMessage.role)
+    ) {
       this.llmMessages.push(enrichedMessage);
       this.messagesByRole[enrichedMessage.role].push(enrichedMessage);
     }
@@ -97,15 +110,15 @@ class EnhancedAgentMemory {
    */
   updateContextStats(message) {
     this.contextStats.totalTokens += message.tokenCount || 0;
-    
+
     switch (message.role) {
-      case 'user':
+      case "user":
         this.contextStats.userMessages++;
         break;
-      case 'assistant':
+      case "assistant":
         this.contextStats.assistantMessages++;
         break;
-      case 'tool':
+      case "tool":
         this.contextStats.toolCalls++;
         break;
     }
@@ -115,8 +128,72 @@ class EnhancedAgentMemory {
    * 智能压缩判断（92%阈值触发）
    */
   shouldCompress() {
-    return this.contextStats.totalTokens > this.compressionConfig.tokenThreshold ||
-           this.shortTerm.length > this.compressionConfig.messageThreshold;
+    return (
+      this.contextStats.totalTokens > this.compressionConfig.tokenThreshold ||
+      this.shortTerm.length > this.compressionConfig.messageThreshold ||
+      this.isMemoryLimitReached()
+    );
+  }
+
+  /**
+   * 检查是否达到内存限制
+   */
+  isMemoryLimitReached() {
+    const currentSize = this.estimateMemorySize();
+    return (
+      currentSize >
+      this.compressionConfig.maxMemorySize * this.memoryMonitor.cleanupThreshold
+    );
+  }
+
+  /**
+   * 估算内存使用量
+   */
+  estimateMemorySize() {
+    try {
+      const allData = {
+        shortTerm: this.shortTerm,
+        mediumTerm: this.mediumTerm,
+        longTerm: this.longTerm,
+        llmMessages: this.llmMessages,
+        messagesByRole: this.messagesByRole,
+      };
+      return Buffer.byteLength(JSON.stringify(allData), "utf8");
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  /**
+   * 内存清理
+   */
+  cleanupMemory() {
+    const now = Date.now();
+
+    // 清理过期的中期记忆（保留7天）
+    const mediumTermCutoff = now - 7 * 24 * 60 * 60 * 1000;
+    this.mediumTerm = this.mediumTerm
+      .filter((item) => item.timestamp > mediumTermCutoff)
+      .slice(-this.compressionConfig.maxMediumTerm);
+
+    // 清理旧的LLM消息（保留3天）
+    const llmCutoff = now - 3 * 24 * 60 * 60 * 1000;
+    this.llmMessages = this.llmMessages
+      .filter((msg) => msg.timestamp > llmCutoff)
+      .slice(-this.compressionConfig.maxMessages);
+
+    // 清理按角色分类的消息
+    Object.keys(this.messagesByRole).forEach((role) => {
+      this.messagesByRole[role] = this.messagesByRole[role]
+        .filter((m) => m.timestamp > llmCutoff)
+        .slice(-Math.floor(this.compressionConfig.maxMessages / 4));
+    });
+
+    // 清理长期记忆中的临时数据
+    const tempKeys = Object.keys(this.longTerm).filter(
+      (key) => key.startsWith("temp_") || key.includes("_cache")
+    );
+    tempKeys.forEach((key) => delete this.longTerm[key]);
   }
 
   /**
@@ -124,27 +201,29 @@ class EnhancedAgentMemory {
    */
   compressMemory() {
     const compressed = this.generateStructuredSummary();
-    
+
     this.mediumTerm.push({
       type: "structured_compression",
       summary: compressed,
       timestamp: Date.now(),
       originalCount: this.shortTerm.length,
       originalTokens: this.contextStats.totalTokens,
-      compressionRatio: compressed.metadata.compressionRatio
+      compressionRatio: compressed.metadata.compressionRatio,
     });
 
     // 保留最近20条消息用于上下文
     this.shortTerm = this.shortTerm.slice(-20);
-    
+
     // 清理旧数据
     this.cleanupOldMessages();
 
     // 更新统计
     this.contextStats.compressionCount++;
     this.contextStats.lastCompressTime = Date.now();
-    this.contextStats.totalTokens = this.shortTerm.reduce((sum, msg) => 
-      sum + (msg.tokenCount || 0), 0);
+    this.contextStats.totalTokens = this.shortTerm.reduce(
+      (sum, msg) => sum + (msg.tokenCount || 0),
+      0
+    );
   }
 
   /**
@@ -153,7 +232,7 @@ class EnhancedAgentMemory {
   generateStructuredSummary() {
     const messages = this.shortTerm;
     const originalTokens = this.contextStats.totalTokens;
-    
+
     return {
       backgroundContext: this.extractBackgroundContext(messages),
       keyDecisions: this.extractKeyDecisions(),
@@ -170,8 +249,8 @@ class EnhancedAgentMemory {
         keyTopics: this.extractKeyTopics(),
         dominantRole: this.getDominantRole(),
         compressionRatio: 0.8, // 估算压缩率
-        sessionDuration: Date.now() - this.contextStats.sessionStart
-      }
+        sessionDuration: Date.now() - this.contextStats.sessionStart,
+      },
     };
   }
 
@@ -183,12 +262,12 @@ class EnhancedAgentMemory {
     return {
       projectPath: this.longTerm.projectPath,
       currentTask: this.longTerm.currentTask,
-      sessionContext: recentMessages.map(m => ({
+      sessionContext: recentMessages.map((m) => ({
         role: m.role,
         type: m.type,
-        preview: (m.content || '').substring(0, 80),
-        timestamp: m.timestamp
-      }))
+        preview: (m.content || "").substring(0, 80),
+        timestamp: m.timestamp,
+      })),
     };
   }
 
@@ -197,12 +276,17 @@ class EnhancedAgentMemory {
    */
   extractKeyDecisions() {
     return this.shortTerm
-      .filter(m => m.type === 'decision' || m.content?.includes('决定') || m.content?.includes('选择'))
-      .map(m => ({
+      .filter(
+        (m) =>
+          m.type === "decision" ||
+          m.content?.includes("决定") ||
+          m.content?.includes("选择")
+      )
+      .map((m) => ({
         content: m.content,
         context: m.context,
         timestamp: m.timestamp,
-        reasoning: m.metadata?.reasoning
+        reasoning: m.metadata?.reasoning,
       }));
   }
 
@@ -210,10 +294,12 @@ class EnhancedAgentMemory {
    * 提取工具使用模式
    */
   extractToolUsage() {
-    const toolMessages = this.shortTerm.filter(m => m.type === 'tool_result' || m.tool);
+    const toolMessages = this.shortTerm.filter(
+      (m) => m.type === "tool_result" || m.tool
+    );
     const toolMap = {};
-    
-    toolMessages.forEach(m => {
+
+    toolMessages.forEach((m) => {
       const tool = m.tool || m.type;
       if (!toolMap[tool]) toolMap[tool] = { count: 0, success: 0 };
       toolMap[tool].count++;
@@ -223,12 +309,16 @@ class EnhancedAgentMemory {
     return {
       toolsUsed: Object.keys(toolMap),
       usageFrequency: Object.entries(toolMap)
-        .sort(([,a], [,b]) => b.count - a.count)
+        .sort(([, a], [, b]) => b.count - a.count)
         .slice(0, 5),
       successRate: Object.entries(toolMap).reduce((acc, [tool, data]) => {
-        acc[tool] = { total: data.count, success: data.success, rate: data.success / data.count };
+        acc[tool] = {
+          total: data.count,
+          success: data.success,
+          rate: data.success / data.count,
+        };
         return acc;
-      }, {})
+      }, {}),
     };
   }
 
@@ -238,14 +328,14 @@ class EnhancedAgentMemory {
   extractUserIntent() {
     const userMessages = this.messagesByRole.user.slice(-5);
     return {
-      primaryIntent: userMessages.slice(-1)[0]?.content || '未指定',
-      intentHistory: userMessages.map(m => ({
+      primaryIntent: userMessages.slice(-1)[0]?.content || "未指定",
+      intentHistory: userMessages.map((m) => ({
         content: m.content,
         timestamp: m.timestamp,
-        tokenCount: m.tokenCount
+        tokenCount: m.tokenCount,
       })),
       complexity: this.getIntentComplexity(),
-      keywords: this.extractKeywords(userMessages)
+      keywords: this.extractKeywords(userMessages),
     };
   }
 
@@ -254,14 +344,14 @@ class EnhancedAgentMemory {
    */
   extractExecutionResults() {
     return this.shortTerm
-      .filter(m => m.type === 'task_result' || m.type === 'tool_result')
-      .map(m => ({
+      .filter((m) => m.type === "task_result" || m.type === "tool_result")
+      .map((m) => ({
         type: m.type,
         success: m.success,
         tool: m.tool,
         summary: m.summary || m.content?.substring(0, 150),
         timestamp: m.timestamp,
-        duration: m.duration
+        duration: m.duration,
       }));
   }
 
@@ -270,13 +360,13 @@ class EnhancedAgentMemory {
    */
   extractErrorHandling() {
     return this.shortTerm
-      .filter(m => m.type === 'error' || (m.result && !m.result.success))
-      .map(m => ({
+      .filter((m) => m.type === "error" || (m.result && !m.result.success))
+      .map((m) => ({
         error: m.error || m.result?.error,
         context: m.step || m.content?.substring(0, 100),
         recoveryAction: m.recoveryAction,
         timestamp: m.timestamp,
-        severity: this.getErrorSeverity(m.error)
+        severity: this.getErrorSeverity(m.error),
       }));
   }
 
@@ -285,15 +375,17 @@ class EnhancedAgentMemory {
    */
   extractOpenIssues() {
     const errors = this.extractErrorHandling();
-    const incomplete = this.shortTerm.filter(m => 
-      m.type === 'task_start' && !m.completed && 
-      Date.now() - m.timestamp > 300000 // 5分钟未完成
+    const incomplete = this.shortTerm.filter(
+      (m) =>
+        m.type === "task_start" &&
+        !m.completed &&
+        Date.now() - m.timestamp > 300000 // 5分钟未完成
     );
-    
+
     return {
       errors: errors.slice(-3),
       incompleteTasks: incomplete.length,
-      pendingItems: this.longTerm.pendingItems || []
+      pendingItems: this.longTerm.pendingItems || [],
     };
   }
 
@@ -301,14 +393,17 @@ class EnhancedAgentMemory {
    * 提取未来计划
    */
   extractFuturePlans() {
-    const plans = this.shortTerm.filter(m => 
-      m.type === 'plan' || m.content?.includes('下一步') || m.content?.includes('计划')
+    const plans = this.shortTerm.filter(
+      (m) =>
+        m.type === "plan" ||
+        m.content?.includes("下一步") ||
+        m.content?.includes("计划")
     );
-    return plans.map(m => ({
+    return plans.map((m) => ({
       content: m.content?.substring(0, 150),
-      priority: m.priority || 'normal',
+      priority: m.priority || "normal",
       estimatedTime: m.estimatedTime,
-      dependencies: m.dependencies || []
+      dependencies: m.dependencies || [],
     }));
   }
 
@@ -317,13 +412,22 @@ class EnhancedAgentMemory {
    */
   extractKeyTopics() {
     const topicMap = new Map();
-    
-    this.shortTerm.forEach(m => {
+
+    this.shortTerm.forEach((m) => {
       if (m.content) {
         const words = m.content.toLowerCase().match(/\b\w{4,}\b/g) || [];
-        const techTerms = ['node', 'javascript', 'python', 'api', 'server', 'client', 'database', 'tool'];
-        
-        words.forEach(word => {
+        const techTerms = [
+          "node",
+          "javascript",
+          "python",
+          "api",
+          "server",
+          "client",
+          "database",
+          "tool",
+        ];
+
+        words.forEach((word) => {
           if (techTerms.includes(word) || word.length > 5) {
             topicMap.set(word, (topicMap.get(word) || 0) + 1);
           }
@@ -332,7 +436,7 @@ class EnhancedAgentMemory {
     });
 
     return Array.from(topicMap.entries())
-      .sort(([,a], [,b]) => b - a)
+      .sort(([, a], [, b]) => b - a)
       .slice(0, 8)
       .map(([topic, count]) => ({ topic, count }));
   }
@@ -342,12 +446,12 @@ class EnhancedAgentMemory {
    */
   getDominantRole() {
     const roles = {};
-    this.shortTerm.forEach(m => {
+    this.shortTerm.forEach((m) => {
       roles[m.role] = (roles[m.role] || 0) + 1;
     });
-    
-    const sorted = Object.entries(roles).sort(([,a], [,b]) => b - a);
-    return sorted[0]?.[0] || 'system';
+
+    const sorted = Object.entries(roles).sort(([, a], [, b]) => b - a);
+    return sorted[0]?.[0] || "system";
   }
 
   /**
@@ -355,15 +459,16 @@ class EnhancedAgentMemory {
    */
   getIntentComplexity() {
     const userMessages = this.messagesByRole.user;
-    if (userMessages.length === 0) return 'simple';
-    
-    const avgLength = userMessages.reduce((sum, m) => 
-      sum + (m.content?.length || 0), 0) / userMessages.length;
-    
-    if (avgLength < 50) return 'simple';
-    if (avgLength < 200) return 'moderate';
-    if (avgLength < 500) return 'complex';
-    return 'very_complex';
+    if (userMessages.length === 0) return "simple";
+
+    const avgLength =
+      userMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0) /
+      userMessages.length;
+
+    if (avgLength < 50) return "simple";
+    if (avgLength < 200) return "moderate";
+    if (avgLength < 500) return "complex";
+    return "very_complex";
   }
 
   /**
@@ -371,18 +476,27 @@ class EnhancedAgentMemory {
    */
   extractKeywords(messages) {
     const keywords = new Set();
-    const techTerms = ['function', 'class', 'method', 'variable', 'file', 'command', 'api', 'server'];
-    
-    messages.forEach(m => {
+    const techTerms = [
+      "function",
+      "class",
+      "method",
+      "variable",
+      "file",
+      "command",
+      "api",
+      "server",
+    ];
+
+    messages.forEach((m) => {
       if (m.content) {
-        techTerms.forEach(term => {
+        techTerms.forEach((term) => {
           if (m.content.toLowerCase().includes(term)) {
             keywords.add(term);
           }
         });
       }
     });
-    
+
     return Array.from(keywords);
   }
 
@@ -390,13 +504,15 @@ class EnhancedAgentMemory {
    * 获取错误严重程度
    */
   getErrorSeverity(error) {
-    if (!error) return 'info';
+    if (!error) return "info";
     const errorStr = error.toString().toLowerCase();
-    
-    if (errorStr.includes('fatal') || errorStr.includes('crash')) return 'critical';
-    if (errorStr.includes('error') || errorStr.includes('failed')) return 'error';
-    if (errorStr.includes('warning')) return 'warning';
-    return 'info';
+
+    if (errorStr.includes("fatal") || errorStr.includes("crash"))
+      return "critical";
+    if (errorStr.includes("error") || errorStr.includes("failed"))
+      return "error";
+    if (errorStr.includes("warning")) return "warning";
+    return "info";
   }
 
   /**
@@ -410,13 +526,13 @@ class EnhancedAgentMemory {
     for (let i = this.llmMessages.length - 1; i >= 0; i--) {
       const msg = this.llmMessages[i];
       const msgTokens = msg.tokenCount || 0;
-      
+
       if (currentTokens + msgTokens > maxTokens) break;
-      
+
       messages.unshift({
         role: msg.role,
         content: msg.content,
-        timestamp: msg.timestamp
+        timestamp: msg.timestamp,
       });
       currentTokens += msgTokens;
     }
@@ -425,7 +541,7 @@ class EnhancedAgentMemory {
       messages,
       totalTokens: currentTokens,
       messageCount: messages.length,
-      compressionRatio: currentTokens / this.contextStats.totalTokens || 0
+      compressionRatio: currentTokens / this.contextStats.totalTokens || 0,
     };
   }
 
@@ -433,11 +549,11 @@ class EnhancedAgentMemory {
    * 清理旧消息
    */
   cleanupOldMessages() {
-    const cutoff = Date.now() - (24 * 60 * 60 * 1000); // 24小时
-    
-    Object.keys(this.messagesByRole).forEach(role => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24小时
+
+    Object.keys(this.messagesByRole).forEach((role) => {
       this.messagesByRole[role] = this.messagesByRole[role].filter(
-        m => m.timestamp > cutoff
+        (m) => m.timestamp > cutoff
       );
     });
   }
@@ -450,21 +566,21 @@ class EnhancedAgentMemory {
       memory: {
         shortTerm: this.shortTerm.length,
         mediumTerm: this.mediumTerm.length,
-        longTerm: Object.keys(this.longTerm).length
+        longTerm: Object.keys(this.longTerm).length,
       },
       messages: {
         total: this.llmMessages.length,
         user: this.messagesByRole.user.length,
         assistant: this.messagesByRole.assistant.length,
         system: this.messagesByRole.system.length,
-        tool: this.messagesByRole.tool.length
+        tool: this.messagesByRole.tool.length,
       },
       context: this.contextStats,
       compression: {
         count: this.contextStats.compressionCount,
         lastTime: this.contextStats.lastCompressTime,
-        threshold: this.compressionConfig.tokenThreshold
-      }
+        threshold: this.compressionConfig.tokenThreshold,
+      },
     };
   }
 
@@ -479,7 +595,7 @@ class EnhancedAgentMemory {
       llmMessages: this.llmMessages,
       messagesByRole: this.messagesByRole,
       contextStats: this.contextStats,
-      exportTime: Date.now()
+      exportTime: Date.now(),
     };
   }
 
@@ -492,7 +608,10 @@ class EnhancedAgentMemory {
     this.longTerm = data.longTerm || {};
     this.llmMessages = data.llmMessages || [];
     this.messagesByRole = data.messagesByRole || {
-      user: [], assistant: [], system: [], tool: []
+      user: [],
+      assistant: [],
+      system: [],
+      tool: [],
     };
     this.contextStats = { ...this.contextStats, ...data.contextStats };
   }
@@ -513,7 +632,7 @@ class EnhancedAgentMemory {
       toolCalls: 0,
       compressionCount: 0,
       sessionStart: Date.now(),
-      lastCompressTime: Date.now()
+      lastCompressTime: Date.now(),
     };
   }
 }

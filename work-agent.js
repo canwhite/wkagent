@@ -290,23 +290,43 @@ class WkAgent extends EventEmitter {
     const stepLower = step.toLowerCase();
 
     // 文件操作
-    if (stepLower.includes("创建") || stepLower.includes("写入") || stepLower.includes("生成")) {
+    if (
+      stepLower.includes("创建") ||
+      stepLower.includes("写入") ||
+      stepLower.includes("生成")
+    ) {
       return "write";
     }
-    if (stepLower.includes("读取") || stepLower.includes("查看") || stepLower.includes("打开")) {
+    if (
+      stepLower.includes("读取") ||
+      stepLower.includes("查看") ||
+      stepLower.includes("打开")
+    ) {
       return "read";
     }
-    if (stepLower.includes("编辑") || stepLower.includes("修改") || stepLower.includes("更新")) {
+    if (
+      stepLower.includes("编辑") ||
+      stepLower.includes("修改") ||
+      stepLower.includes("更新")
+    ) {
       return "edit";
     }
-    
+
     // 命令执行
-    if (stepLower.includes("执行") || stepLower.includes("运行") || stepLower.includes("启动")) {
+    if (
+      stepLower.includes("执行") ||
+      stepLower.includes("运行") ||
+      stepLower.includes("启动")
+    ) {
       return "bash";
     }
-    
+
     // 搜索操作
-    if (stepLower.includes("搜索") || stepLower.includes("查找") || stepLower.includes("匹配")) {
+    if (
+      stepLower.includes("搜索") ||
+      stepLower.includes("查找") ||
+      stepLower.includes("匹配")
+    ) {
       return "grep";
     }
     if (stepLower.includes("列出") || stepLower.includes("显示所有")) {
@@ -324,12 +344,21 @@ class WkAgent extends EventEmitter {
 
     switch (tool) {
       case "read":
-        params.path = context.filePath || this.extractFilePath(step) || context.projectPath;
+        params.path =
+          context.filePath || this.extractFilePath(step) || context.projectPath;
         break;
 
       case "write":
-        params.path = context.filePath || context.outputFile || context.serverFile || context.outputPath || "output.txt";
-        params.content = context.content || context.code || step.replace(/创建|写入/g, "").trim();
+        params.path =
+          context.filePath ||
+          context.outputFile ||
+          context.serverFile ||
+          context.outputPath ||
+          "output.txt";
+        params.content =
+          context.content ||
+          context.code ||
+          step.replace(/创建|写入/g, "").trim();
         break;
 
       case "edit":
@@ -347,7 +376,8 @@ class WkAgent extends EventEmitter {
         break;
 
       case "bash":
-        params.command = context.command || step.replace(/执行|运行/g, "").trim();
+        params.command =
+          context.command || step.replace(/执行|运行/g, "").trim();
         // 确保有默认路径
         if (!params.command) {
           params.command = "echo 'no command provided'";

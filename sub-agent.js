@@ -262,15 +262,23 @@ class SubAgent extends EventEmitter {
   parseStepParams(step, context = {}) {
     const params = {};
     const tool = this.selectToolForStep(step);
-    
+
     // 使用与主代理相同的参数解析逻辑
     switch (tool) {
       case "read":
-        params.path = context.filePath || this.extractFilePath(step) || context.projectPath || ".";
+        params.path =
+          context.filePath ||
+          this.extractFilePath(step) ||
+          context.projectPath ||
+          ".";
         break;
 
       case "write":
-        params.path = context.filePath || context.outputFile || context.serverFile || "output.txt";
+        params.path =
+          context.filePath ||
+          context.outputFile ||
+          context.serverFile ||
+          "output.txt";
         if (context.content || context.code) {
           params.content = context.content || context.code;
         } else if (context.serverFile) {
@@ -308,7 +316,8 @@ module.exports = server;`;
         break;
 
       case "bash":
-        params.command = context.command || step.replace(/执行|运行/g, "").trim();
+        params.command =
+          context.command || step.replace(/执行|运行/g, "").trim();
         // 确保有默认路径
         if (!params.command) {
           params.command = "echo 'no command provided'";

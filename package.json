@@ -1,12 +1,12 @@
 {
   "name": "work-agent-js",
   "version": "1.0.0",
-  "description": "基于course.md架构的JS Agent系统，集成LLM增强智能决策能力",
+  "description": "JS Agent系统，集成LLM增强智能决策能力",
   "main": "work-agent.js",
   "scripts": {
-    "test": "node test-simple.js --quick",
-    "dev": "node test-simple.js --all",
-    "start": "node -e \"const {simpleTest} = require('./test-simple.js'); simpleTest()\""
+    "test": "node test/test-simple.js --quick",
+    "dev": "node test/test-simple.js --all",
+    "start": "node -e \"const {simpleTest} = require('./test/test-simple.js'); simpleTest()\""
   },
   "keywords": [
     "agent",
