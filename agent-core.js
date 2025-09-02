@@ -5,94 +5,88 @@
 
 require("dotenv").config();
 
+/**
+ * Enhanced Memory System based on Claude Workflow 3-tier architecture
+ * Provides backward compatibility with original AgentMemory interface
+ */
 class AgentMemory {
   constructor() {
-    this.shortTerm = []; // 短期记忆：当前会话
-    this.mediumTerm = []; // 中期记忆：压缩上下文
-    this.longTerm = {}; // 长期记忆：项目配置
+    this.enhancedMemory =
+      new (require("./enhanced-memory").EnhancedAgentMemory)();
   }
 
   /**
-   * 添加消息到短期记忆
+   * 添加消息到短期记忆（向后兼容）
    */
   addToShortTerm(message) {
-    this.shortTerm.push({
-      ...message,
-      timestamp: Date.now(),
-    });
-
-    // 检查是否需要压缩
-    if (this.shouldCompress()) {
-      this.compressMemory();
-    }
+    this.enhancedMemory.addMessage(message);
   }
 
   /**
    * 判断是否需要压缩记忆
    */
   shouldCompress() {
-    return this.shortTerm.length > 50; // 简单阈值判断
+    return this.enhancedMemory.shouldCompress();
   }
 
   /**
    * 压缩短期记忆到中期记忆
    */
   compressMemory() {
-    const summary = this.generateSummary();
-    this.mediumTerm.push({
-      type: "compressed_context",
-      summary: summary,
-      timestamp: Date.now(),
-      originalCount: this.shortTerm.length,
-    });
-
-    // 保留最近10条消息
-    this.shortTerm = this.shortTerm.slice(-10);
+    this.enhancedMemory.compressMemory();
   }
 
   /**
    * 生成记忆摘要
    */
   generateSummary() {
-    const topics = this.extractTopics();
-    const decisions = this.extractDecisions();
-
-    return {
-      topics: topics,
-      decisions: decisions,
-      timestamp: Date.now(),
-      messageCount: this.shortTerm.length,
-    };
+    return this.enhancedMemory.generateStructuredSummary();
   }
 
   /**
    * 提取主题
    */
   extractTopics() {
-    const messages = this.shortTerm;
-    const topics = [];
-
-    messages.forEach((msg) => {
-      if (msg.content) {
-        const words = msg.content.toLowerCase().split(/\s+/);
-        words.forEach((word) => {
-          if (word.length > 3 && !topics.includes(word)) {
-            topics.push(word);
-          }
-        });
-      }
-    });
-
-    return topics.slice(0, 10);
+    return this.enhancedMemory.extractKeyTopics().map((t) => t.topic);
   }
 
   /**
    * 提取决策
    */
   extractDecisions() {
-    return this.shortTerm
-      .filter((msg) => msg.type === "decision")
-      .map((msg) => msg.content);
+    return this.enhancedMemory.extractKeyDecisions().map((d) => d.content);
+  }
+
+  /**
+   * 获取底层增强内存实例
+   */
+  getEnhancedMemory() {
+    return this.enhancedMemory;
+  }
+
+  // 保持向后兼容的属性访问
+  get shortTerm() {
+    return this.enhancedMemory.shortTerm;
+  }
+
+  get mediumTerm() {
+    return this.enhancedMemory.mediumTerm;
+  }
+
+  get longTerm() {
+    return this.enhancedMemory.longTerm;
+  }
+
+  set shortTerm(value) {
+    this.enhancedMemory.shortTerm = value;
+  }
+
+  set mediumTerm(value) {
+    this.enhancedMemory.mediumTerm = value;
+  }
+
+  set longTerm(value) {
+    this.enhancedMemory.longTerm = value;
   }
 }
 
