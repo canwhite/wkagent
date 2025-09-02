@@ -3,7 +3,7 @@
  * 包含LLM增强智能决策能力
  */
 
-require('dotenv').config();
+require("dotenv").config();
 
 class AgentMemory {
   constructor() {
@@ -117,13 +117,13 @@ class LLMService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           model: this.model,
           max_tokens: 10,
           messages: [{ role: "user", content: "ping" }],
-          stream: false
+          stream: false,
         }),
       });
 
@@ -170,7 +170,7 @@ class LLMService {
   async callLLM(prompt, systemPrompt = "") {
     try {
       const messages = [];
-      
+
       if (systemPrompt) {
         messages.push({ role: "system", content: systemPrompt });
       }
@@ -180,14 +180,14 @@ class LLMService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           model: this.model,
           max_tokens: this.maxTokens,
           temperature: this.temperature,
           messages: messages,
-          stream: false
+          stream: false,
         }),
       });
 
@@ -207,14 +207,37 @@ class LLMService {
    * 智能工具选择
    */
   async selectTools(task, availableTools) {
-    const prompt = `根据任务选择最适合的工具：
+    const prompt = `你是一个工具选择专家，请根据任务描述选择最适合的工具。
+
 任务：${task}
 可用工具：${JSON.stringify(availableTools, null, 2)}
 
-选择最适合的工具组合，并解释原因。`;
+工具说明：
+- read: 读取文件内容
+- write: 写入文件内容  
+- edit: 编辑文件内容
+- bash: 执行系统命令
+- grep: 搜索文件内容
+- glob: 文件模式匹配
+
+请根据任务类型选择最适合的工具。只需返回工具名称，例如：["bash"]
+
+任务分析：
+- 如果涉及创建或写入文件：选择 "write"
+- 如果涉及读取文件：选择 "read"
+- 如果涉及执行命令：选择 "bash"
+- 如果涉及搜索：选择 "grep"
+- 如果涉及列出文件：选择 "glob"
+
+直接返回JSON格式：["工具名称"]`;
 
     try {
       const response = await this.callLLM(prompt);
+      //TODO: 需要优化,这只是临时方案,实际应用中需要更复杂的解析逻辑
+      const match = response.match(/\[("[^"]*")\]/);
+      if (match) {
+        return JSON.parse(match[0]);
+      }
       return this.parseToolSelection(response);
     } catch (error) {
       return ["basic"];

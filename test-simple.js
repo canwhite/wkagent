@@ -95,6 +95,9 @@ require('fs').writeFileSync('sum-result.txt', sum.toString());`,
   }
 }
 
-simpleTest();
+// 仅在直接运行时执行测试
+if (require.main === module) {
+  simpleTest();
+}
 
 module.exports = { simpleTest };

@@ -21,6 +21,7 @@ class SubAgent extends EventEmitter {
     this.parentId = taskInfo.parentId || "root";
     this.task = taskInfo.task || "";
     this.description = taskInfo.description || "";
+    this.taskInfo = taskInfo; // 保存完整的taskInfo包括context
 
     // 独立配置（继承父配置但保持隔离）
     this.config = {
@@ -39,7 +40,7 @@ class SubAgent extends EventEmitter {
 
     // 独立资源
     this.memory = new AgentMemory();
-    this.registry = new ToolRegistry();
+    this.registry = new ToolRegistry(); // 复用现有的ToolRegistry
     this.llmService = null;
     this.startTime = Date.now();
     this.isRunning = false;
@@ -204,7 +205,7 @@ class SubAgent extends EventEmitter {
    */
   async executeStep(step, stepNumber, totalSteps) {
     const tool = this.selectToolForStep(step);
-    const params = this.parseStepParams(step);
+    const params = this.parseStepParams(step, this.taskInfo?.context || {});
 
     try {
       const validation = this.registry.validateParams(tool, params);
@@ -258,28 +259,72 @@ class SubAgent extends EventEmitter {
   /**
    * 解析步骤参数
    */
-  parseStepParams(step) {
+  parseStepParams(step, context = {}) {
     const params = {};
-    const stepLower = step.toLowerCase();
+    const tool = this.selectToolForStep(step);
+    
+    // 使用与主代理相同的参数解析逻辑
+    switch (tool) {
+      case "read":
+        params.path = context.filePath || this.extractFilePath(step) || context.projectPath || ".";
+        break;
 
-    // 智能参数解析
-    if (
-      stepLower.includes("文件") ||
-      stepLower.includes(".txt") ||
-      stepLower.includes(".js")
-    ) {
-      const fileMatch = step.match(/[\w\/\\.-]+\.\w+/g);
-      params.path = fileMatch ? fileMatch[0] : "./output.txt";
-    }
+      case "write":
+        params.path = context.filePath || context.outputFile || context.serverFile || "output.txt";
+        if (context.content || context.code) {
+          params.content = context.content || context.code;
+        } else if (context.serverFile) {
+          // 当指定serverFile时，生成服务器代码
+          params.content = `const http = require('http');
 
-    if (stepLower.includes("搜索") || stepLower.includes("查找")) {
-      const patternMatch = step.match(/["']([^"']+)["']/g);
-      params.pattern = patternMatch ? patternMatch[0].slice(1, -1) : "function";
-    }
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Hello World');
+});
 
-    if (stepLower.includes("执行") || stepLower.includes("运行")) {
-      const commandMatch = step.match(/执行\s+(.+)|运行\s+(.+)/);
-      params.command = commandMatch ? commandMatch[1] || commandMatch[2] : "ls";
+const port = ${context.port || 3000};
+server.listen(port, () => {
+  console.log(\`服务器运行在 http://localhost:\${port}\`);
+});
+
+module.exports = server;`;
+        } else {
+          params.content = step.replace(/创建|写入/g, "").trim();
+        }
+        break;
+
+      case "edit":
+        params.path = context.filePath || this.extractFilePath(step);
+        if (context.oldString && context.newString) {
+          params.oldString = context.oldString;
+          params.newString = context.newString;
+        } else {
+          const editMatch = step.match(/将(.+?)替换为(.+)/);
+          if (editMatch) {
+            params.oldString = editMatch[1].trim();
+            params.newString = editMatch[2].trim();
+          }
+        }
+        break;
+
+      case "bash":
+        params.command = context.command || step.replace(/执行|运行/g, "").trim();
+        // 确保有默认路径
+        if (!params.command) {
+          params.command = "echo 'no command provided'";
+        }
+        break;
+
+      case "grep":
+        params.pattern = context.pattern || this.extractPattern(step);
+        params.path = context.projectPath || ".";
+        params.files = context.files;
+        break;
+
+      case "glob":
+        params.pattern = context.pattern || this.extractPattern(step) || "**/*";
+        params.path = context.projectPath || ".";
+        break;
     }
 
     return params;

@@ -286,15 +286,32 @@ class WkAgent extends EventEmitter {
       }
     }
 
-    // 基于关键词匹配
+    // 基于关键词匹配 - 更智能的匹配
     const stepLower = step.toLowerCase();
 
-    if (stepLower.includes("创建") || stepLower.includes("写入"))
+    // 文件操作
+    if (stepLower.includes("创建") || stepLower.includes("写入") || stepLower.includes("生成")) {
       return "write";
-    if (stepLower.includes("读取") || stepLower.includes("查看")) return "read";
-    if (stepLower.includes("编辑") || stepLower.includes("修改")) return "edit";
-    if (stepLower.includes("搜索") || stepLower.includes("查找")) return "grep";
-    if (stepLower.includes("执行") || stepLower.includes("运行")) return "bash";
+    }
+    if (stepLower.includes("读取") || stepLower.includes("查看") || stepLower.includes("打开")) {
+      return "read";
+    }
+    if (stepLower.includes("编辑") || stepLower.includes("修改") || stepLower.includes("更新")) {
+      return "edit";
+    }
+    
+    // 命令执行
+    if (stepLower.includes("执行") || stepLower.includes("运行") || stepLower.includes("启动")) {
+      return "bash";
+    }
+    
+    // 搜索操作
+    if (stepLower.includes("搜索") || stepLower.includes("查找") || stepLower.includes("匹配")) {
+      return "grep";
+    }
+    if (stepLower.includes("列出") || stepLower.includes("显示所有")) {
+      return "glob";
+    }
 
     return null;
   }
@@ -305,42 +322,46 @@ class WkAgent extends EventEmitter {
   parseToolParams(step, tool, context) {
     const params = {};
 
-    // 基于步骤内容解析参数
-    const words = step.split(/\s+/);
-
     switch (tool) {
       case "read":
-        // 从步骤中提取文件路径
-        const filePath = this.extractFilePath(step) || context.projectPath;
-        params.path = filePath;
+        params.path = context.filePath || this.extractFilePath(step) || context.projectPath;
         break;
 
       case "write":
-        params.path = context.outputPath || "output.txt";
-        params.content = step.replace(/创建|写入/g, "").trim();
+        params.path = context.filePath || context.outputFile || context.serverFile || context.outputPath || "output.txt";
+        params.content = context.content || context.code || step.replace(/创建|写入/g, "").trim();
         break;
 
       case "edit":
-        params.path = this.extractFilePath(step);
-        // 简单解析编辑参数
-        const editMatch = step.match(/将(.+?)替换为(.+)/);
-        if (editMatch) {
-          params.oldString = editMatch[1].trim();
-          params.newString = editMatch[2].trim();
+        params.path = context.filePath || this.extractFilePath(step);
+        if (context.oldString && context.newString) {
+          params.oldString = context.oldString;
+          params.newString = context.newString;
+        } else {
+          const editMatch = step.match(/将(.+?)替换为(.+)/);
+          if (editMatch) {
+            params.oldString = editMatch[1].trim();
+            params.newString = editMatch[2].trim();
+          }
         }
         break;
 
       case "bash":
-        params.command = step.replace(/执行|运行/g, "").trim();
+        params.command = context.command || step.replace(/执行|运行/g, "").trim();
+        // 确保有默认路径
+        if (!params.command) {
+          params.command = "echo 'no command provided'";
+        }
         break;
 
       case "grep":
-        params.pattern = this.extractPattern(step);
+        params.pattern = context.pattern || this.extractPattern(step);
         params.cwd = context.projectPath || ".";
+        params.files = context.files;
         break;
 
       case "glob":
-        params.pattern = this.extractPattern(step) || "**/*";
+        params.pattern = context.pattern || this.extractPattern(step) || "**/*";
         params.cwd = context.projectPath || ".";
         break;
     }
