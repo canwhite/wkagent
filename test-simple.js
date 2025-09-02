@@ -96,3 +96,5 @@ require('fs').writeFileSync('sum-result.txt', sum.toString());`,
 }
 
 simpleTest();
+
+module.exports = { simpleTest };

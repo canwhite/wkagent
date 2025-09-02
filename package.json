@@ -4,9 +4,9 @@
   "description": "基于course.md架构的JS Agent系统，集成LLM增强智能决策能力",
   "main": "work-agent.js",
   "scripts": {
-    "test": "node examples.js --quick",
-    "dev": "node examples.js --all",
-    "start": "node -e \"const {quickTest} = require('./examples'); quickTest()\""
+    "test": "node test-simple.js --quick",
+    "dev": "node test-simple.js --all",
+    "start": "node -e \"const {simpleTest} = require('./test-simple.js'); simpleTest()\""
   },
   "keywords": [
     "agent",
