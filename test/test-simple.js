@@ -36,7 +36,7 @@ async function simpleTest() {
       task: "创建一个包含当前时间戳的test.txt文件",
       context: {
         projectPath: process.cwd(),
-        filePath: "./test.txt",
+        filePath: "./test/test.txt",
         content: `当前时间戳: ${new Date().toISOString()}`,
       },
     });
@@ -59,7 +59,7 @@ async function simpleTest() {
       task: "创建一个JavaScript文件来计算1到100的和",
       context: {
         projectPath: process.cwd(),
-        outputFile: "./sum-calculator.js",
+        outputFile: "./test/sum-calculator.js",
         code: `const sum = Array.from({length: 100}, (_, i) => i + 1).reduce((a, b) => a + b, 0);
 console.log('1到100的和:', sum);
 require('fs').writeFileSync('sum-result.txt', sum.toString());`,
@@ -73,7 +73,7 @@ require('fs').writeFileSync('sum-result.txt', sum.toString());`,
       task: "创建一个简单的Node.js HTTP服务器，监听3000端口，返回Hello World",
       context: {
         projectPath: process.cwd(),
-        serverFile: "./simple-server.js",
+        serverFile: "./test/simple-server.js",
         port: 3000,
       },
     });
