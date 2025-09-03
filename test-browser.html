@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WkAgent Browser Test</title>
+</head>
+<body>
+    <h1>WkAgent Browser Test</h1>
+    <div id="output"></div>
+    <button onclick="runBrowserTest()">Run Test</button>
+
+    <script src="dist/wkagent.browser.js"></script>
+    <script>
+        const output = document.getElementById('output');
+
+        function log(message) {
+            const div = document.createElement('div');
+            div.textContent = message;
+            output.appendChild(div);
+        }
+
+        async function runBrowserTest() {
+            try {
+                log('Creating browser agent...');
+                const agent = new WkAgent({
+                    maxConcurrency: 2
+                });
+
+                log('Agent created successfully');
+                log('Running test task...');
+
+                const result = await agent.execute({
+                    task: "创建测试文件并存储数据",
+                    context: {
+                        filePath: 'test.txt',
+                        content: 'Hello from browser!',
+                        operation: 'set',
+                        key: 'test-key',
+                        value: 'test-value'
+                    }
+                });
+
+                log('Test completed:');
+                log(JSON.stringify(result, null, 2));
+                
+                const status = agent.getStatus();
+                log('Agent status:');
+                log(JSON.stringify(status, null, 2));
+
+            } catch (error) {
+                log('Error: ' + error.message);
+                console.error(error);
+            }
+        }
+
+        // Auto-run test
+        setTimeout(runBrowserTest, 1000);
+    </script>
+</body>
+</html>

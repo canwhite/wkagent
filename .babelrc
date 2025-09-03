@@ -1,0 +1,14 @@
+{
+  "presets": [
+    [
+      "@babel/preset-env",
+      {
+        "targets": {
+          "node": "14",
+          "browsers": ["last 2 versions", "ie >= 11"]
+        },
+        "modules": false
+      }
+    ]
+  ]
+}
