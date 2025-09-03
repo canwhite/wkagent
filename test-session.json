@@ -1,0 +1,33 @@
+{
+  "timestamp": 1756867947523,
+  "memory": {
+    "shortTerm": [
+      {
+        "role": "system",
+        "content": "测试统一接口",
+        "type": "system_prompt",
+        "id": "msg_1756867947523_whxzu7f9j",
+        "timestamp": 1756867947523,
+        "tokenCount": 2,
+        "metadata": {}
+      },
+      {
+        "role": "user",
+        "content": "测试会话保存",
+        "type": "test_message",
+        "id": "msg_1756867947523_jafn86jc0",
+        "timestamp": 1756867947523,
+        "tokenCount": 2,
+        "metadata": {}
+      }
+    ],
+    "mediumTerm": [],
+    "longTerm": {}
+  },
+  "tasks": [],
+  "config": {
+    "enableLearning": true,
+    "llmEnabled": true,
+    "maxConcurrency": 10
+  }
+}

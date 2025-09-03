@@ -19,7 +19,15 @@ class AgentMemory {
   }
 
   /**
-   * 添加消息到短期记忆（向后兼容）
+   * 添加消息到记忆系统（统一接口）
+   */
+  addMessage(message) {
+    this.enhancedMemory.addMessage(message);
+  }
+
+  /**
+   * 向后兼容的方法
+   * @deprecated 使用addMessage()代替
    */
   addToShortTerm(message) {
     this.enhancedMemory.addMessage(message);

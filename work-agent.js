@@ -574,6 +574,46 @@ class WkAgent extends EventEmitter {
   }
 
   /**
+   * 批量执行多个任务
+   */
+  async batchExecute(tasks, options = {}) {
+    const { maxConcurrency = 5, context = {} } = options;
+    
+    const taskList = tasks.map(task => ({
+      description: typeof task === 'string' ? task : task.description,
+      task: typeof task === 'string' ? task : task.task,
+      context: { ...context, ...(typeof task === 'object' ? task.context : {}) }
+    }));
+
+    const batchId = `batch_${++this.taskId}`;
+    
+    try {
+      this.emit("batch:start", batchId, { taskCount: taskList.length });
+
+      // 创建SubAgent并发执行任务
+      const results = await this.executeSubTasksConcurrently(taskList, {
+        maxSubAgents: maxConcurrency,
+        ...context
+      });
+
+      // 汇总结果
+      const summary = {
+        total: results.length,
+        successful: results.filter(r => r.status === 'fulfilled').length,
+        failed: results.filter(r => r.status === 'rejected').length,
+        results: results
+      };
+
+      this.emit("batch:complete", batchId, summary);
+      return summary;
+
+    } catch (error) {
+      this.emit("batch:error", batchId, error);
+      throw error;
+    }
+  }
+
+  /**
    * 清理内存
    */
   cleanup() {
@@ -594,6 +634,70 @@ class WkAgent extends EventEmitter {
    */
   getAvailableTools() {
     return this.registry.getAll();
+  }
+
+  /**
+   * 保存当前会话到文件
+   */
+  async saveSession(filename = null) {
+    const sessionData = {
+      timestamp: Date.now(),
+      memory: {
+        shortTerm: this.memory.shortTerm,
+        mediumTerm: this.memory.mediumTerm,
+        longTerm: this.memory.longTerm,
+      },
+      tasks: Array.from(this.activeTasks.entries()),
+      config: {
+        enableLearning: this.config.enableLearning,
+        llmEnabled: this.config.llm.enableLLM,
+        maxConcurrency: this.config.maxConcurrency,
+      },
+    };
+
+    const fs = require("fs").promises;
+    const path = require("path");
+    
+    const filenameSafe = filename || `session_${Date.now()}.json`;
+    const filepath = path.resolve(filenameSafe);
+    
+    try {
+      await fs.writeFile(filepath, JSON.stringify(sessionData, null, 2));
+      return { success: true, filepath };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 从文件加载会话
+   */
+  async loadSession(filepath) {
+    const fs = require("fs").promises;
+    const path = require("path");
+    
+    try {
+      const resolvedPath = path.resolve(filepath);
+      const data = await fs.readFile(resolvedPath, "utf-8");
+      const sessionData = JSON.parse(data);
+      
+      // 恢复记忆数据
+      this.memory.shortTerm = sessionData.memory.shortTerm || [];
+      this.memory.mediumTerm = sessionData.memory.mediumTerm || [];
+      this.memory.longTerm = sessionData.memory.longTerm || {};
+      
+      // 恢复活跃任务
+      this.activeTasks.clear();
+      if (sessionData.tasks && Array.isArray(sessionData.tasks)) {
+        sessionData.tasks.forEach(([taskId, taskData]) => {
+          this.activeTasks.set(taskId, taskData);
+        });
+      }
+      
+      return { success: true, filepath, restored: sessionData.timestamp };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   }
 }
 
