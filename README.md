@@ -159,6 +159,26 @@ const result = await agent.execute({
   task: "创建一个Node.js HTTP服务器",
   context: { projectPath: process.cwd() },
 });
+
+//execute方法的完整参数;
+await agent.execute({
+  task: string, // 必需：主任务描述
+  context: {
+    // 可选：执行上下文
+    projectPath: string, // 项目根目录
+    filePath: string, // 特定文件路径
+    pattern: string, // 搜索模式
+    command: string, // 要执行的命令
+    outputFile: string, // 输出文件路径
+    content: string, // 文件内容
+    code: string, // 代码内容
+    serverFile: string, // 服务器文件名
+    port: number, // 端口号
+    oldString: string, // 编辑-旧内容
+    newString: string, // 编辑-新内容
+    files: string, // 文件匹配模式
+  },
+});
 ```
 
 ### 内存状态查看
