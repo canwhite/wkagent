@@ -6,6 +6,7 @@
 const { AgentMemory, LLMService, ToolRegistry } = require("./agent-core");
 const { SubAgentManager, TaskTool } = require("./sub-agent");
 const EventEmitter = require("events");
+const JSONParser = require("./utils/json-parser");
 
 class WkAgent extends EventEmitter {
   constructor(config = {}) {
@@ -133,6 +134,73 @@ class WkAgent extends EventEmitter {
     } catch (error) {
       this.emit("task:error", taskId, error);
       throw error;
+    }
+  }
+
+  /**
+   * 获取LLM的JSON响应（使用完整记忆系统）
+   */
+  async getJSONResponse(prompt, context = {}) {
+    if (!this.llmService || !this.config.llm.enableLLM) {
+      return { success: false, error: "LLM未启用" };
+    }
+
+    const taskId = `json_${++this.taskId}`;
+    
+    try {
+      this.emit("task:start", taskId);
+
+      // 记录到三层记忆系统
+      this.memory.addToShortTerm({
+        type: "json_request",
+        content: prompt,
+        context: context,
+        taskId: taskId,
+        timestamp: Date.now(),
+      });
+
+      // 构建包含记忆上下文的prompt
+      const memoryContext = this.memory.getLLMContext(2000);
+      const enhancedPrompt = `${prompt}
+
+重要：请严格按照JSON格式返回，不要包含解释文字。
+
+相关上下文：${JSON.stringify(context, null, 2)}
+
+历史记忆摘要：${memoryContext.messageCount}条相关记录`;
+
+      const response = await this.llmService.callLLM(enhancedPrompt);
+      const parsed = JSONParser.extractJSON(response);
+
+      // 记录结果到记忆
+      this.memory.addToShortTerm({
+        type: "json_response",
+        content: response,
+        parsed: parsed,
+        taskId: taskId,
+        timestamp: Date.now(),
+      });
+
+      this.emit("task:complete", taskId, { type: "json_response", data: parsed });
+
+      return { 
+        success: true, 
+        data: parsed,
+        taskId: taskId,
+        memoryUsed: this.memory.getEnhancedMemory().getStatus()
+      };
+
+    } catch (error) {
+      this.emit("task:error", taskId, error);
+      
+      this.memory.addToShortTerm({
+        type: "json_error",
+        content: error.message,
+        taskId: taskId,
+        timestamp: Date.now(),
+      });
+      
+      return { success: false, error: error.message, taskId: taskId };
     }
   }
 

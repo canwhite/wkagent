@@ -67,6 +67,20 @@ class AgentMemory {
     return this.enhancedMemory;
   }
 
+  /**
+   * 获取LLM上下文
+   */
+  getLLMContext(maxTokens = 4000) {
+    return this.enhancedMemory.getLLMContext(maxTokens);
+  }
+
+  /**
+   * 获取状态信息
+   */
+  getStatus() {
+    return this.enhancedMemory.getStatus();
+  }
+
   // 保持向后兼容的属性访问
   get shortTerm() {
     return this.enhancedMemory.shortTerm;
@@ -186,6 +200,51 @@ class LLMService {
     } catch (error) {
       console.error("LLM健康检查失败:", SecurityLogger.sanitizeError(error));
       return false;
+    }
+  }
+
+  /**
+   * 理解任务
+   */
+  /**
+   * 解析降级响应
+   */
+  parseFallbackResponse(response) {
+    // 从文本中提取关键信息
+    const lines = response.split('\n').filter(line => line.trim());
+    
+    const typeMatch = response.match(/任务类型[:：]\s*(.+)/i);
+    const goalMatch = response.match(/主要目标[:：]\s*(.+)/i);
+    const toolsMatch = response.match(/所需工具[:：]\s*(.+)/i);
+    
+    return {
+      type: typeMatch ? typeMatch[1].trim() : "general",
+      goal: goalMatch ? goalMatch[1].trim() : "",
+      tools: toolsMatch ? toolsMatch[1].split(',').map(t => t.trim()) : ["basic"],
+      steps: ["task"],
+      output: "text",
+    };
+  }
+
+  /**
+   * 获取JSON格式的LLM响应
+   */
+  async getJSONResponse(prompt, schema = null) {
+    const enhancedPrompt = `${prompt}
+
+请以严格的JSON格式返回结果，不要包含任何解释文字或其他格式。`;
+    
+    try {
+      const response = await this.callLLM(enhancedPrompt);
+      const parsed = JSONParser.extractJSON(response);
+      
+      if (parsed) {
+        return { success: true, data: parsed };
+      }
+      
+      return { success: false, error: "无法从响应中提取有效JSON", raw: response };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   }
 

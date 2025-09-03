@@ -10,12 +10,19 @@ async function simpleTest() {
     llm: {
       enableLLM: true,
       apiKey: process.env.DEEPSEEK_API_KEY,
-      model: "deepseek-chat",
-      baseURL: "https://api.deepseek.com",
+      // model: "deepseek-chat",
+      // baseURL: "https://api.deepseek.com",
     },
   });
 
   try {
+    // 🔧 修复：直接获取JSON响应
+    console.log("🧪 测试LLM JSON响应能力...");
+    const jsonResult = await agent.getJSONResponse(
+      '帮我写一个关于"如果我被困在了一个游戏里，我该怎么逃出来"的小说大纲，返回格式：{"title":"","outline":["第一章：...","第二章：...","第三章：...","第四章：..."]}'
+    );
+    console.log("✅ LLM大纲JSON:", JSON.stringify(jsonResult, null, 2));
+
     // 测试LLM理解能力
     const result = await agent.analyzeTask({
       task: "创建一个简单的Node.js HTTP服务器",
