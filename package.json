@@ -22,7 +22,8 @@
   "license": "MIT",
   "dependencies": {
     "dotenv": "^17.2.1",
-    "glob": "^10.3.10"
+    "glob": "^10.3.10",
+    "jsonrepair": "^3.8.0"
   },
   "engines": {
     "node": ">=14.0.0"

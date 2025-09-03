@@ -6,6 +6,7 @@
 require("dotenv").config();
 const path = require("path");
 const fs = require("fs");
+const JSONParser = require("./utils/json-parser");
 
 /**
  * Enhanced Memory System based on Claude Workflow 3-tier architecture
@@ -207,7 +208,14 @@ class LLMService {
 
     try {
       const response = await this.callLLM(prompt);
-      return JSON.parse(response);
+      const parsed = JSONParser.extractJSON(response);
+      if (parsed) {
+        return parsed;
+      }
+      
+      // 降级处理：尝试手动解析
+      const fallback = this.parseFallbackResponse(response);
+      return fallback;
     } catch (error) {
       return {
         type: "general",
