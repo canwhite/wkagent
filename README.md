@@ -206,3 +206,100 @@ console.log("活跃任务:", status.activeTasks);
 3. **可扩展**: 模块化设计，易于添加新工具
 4. **高性能**: 智能内存压缩和垃圾回收
 5. **可观测**: 完整的执行日志和状态监控
+6. **前后端通用**: 支持Node.js和浏览器环境
+
+## 🌐 前后端通用使用指南
+
+### 构建产物
+```
+dist/
+├── wkagent.node.js      # Node.js版本 (55.2KB)
+├── wkagent.browser.js   # 浏览器版本 (22.7KB)
+```
+
+### 1. Node.js环境
+```javascript
+const WkAgent = require('./dist/wkagent.node.js');
+
+const agent = new WkAgent({ llm: { enableLLM: true } });
+const result = await agent.execute({
+  task: "分析代码",
+  context: { path: './src' }
+});
+```
+
+### 2. 浏览器环境
+```html
+<script src="dist/wkagent.browser.js"></script>
+<script>
+  const agent = new WkAgent();
+  agent.execute({ task: "测试浏览器" });
+</script>
+```
+
+### 3. Next.js集成
+
+#### 服务端（API路由）
+```javascript
+// pages/api/agent.js
+import WkAgent from '../dist/wkagent.node.js';
+
+export default async function handler(req, res) {
+  const agent = new WkAgent();
+  const result = await agent.execute(req.body);
+  res.json(result);
+}
+```
+
+#### 客户端（React Hook）
+```javascript
+// hooks/useAgent.js
+'use client';
+import { useState, useEffect } from 'react';
+
+export function useAgent() {
+  const [agent, setAgent] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    import('../dist/wkagent.browser.js').then(module => {
+      setAgent(new module.default());
+      setLoading(false);
+    });
+  }, []);
+
+  return { agent, loading };
+}
+
+// 使用示例
+export default function MyComponent() {
+  const { agent, loading } = useAgent();
+  
+  if (loading) return <div>加载中...</div>;
+  
+  return <button onClick={() => agent.execute({ task: "hi" })} >运行</button>;
+}
+```
+
+### 4. 文件放置（Next.js）
+```
+nextjs-project/
+├── public/
+│   └── wkagent.browser.js   # 浏览器版本
+├── dist/
+│   └── wkagent.node.js      # Node.js版本
+├── pages/api/
+│   └── agent.js            # 服务端API
+└── hooks/
+    └── useAgent.js         # React Hook
+```
+
+## 🔍 环境特性对比
+
+| 特性 | Node.js版本 | 浏览器版本 |
+|---|---|---|
+| 文件系统 | 真实文件系统 | localStorage模拟 |
+| Shell命令 | ✅ 支持 | ❌ 不支持 |
+| 存储容量 | 无限制 | 5MB限制 |
+| 文件大小 | 55.2KB | 22.7KB |
+| 使用方式 | require/import | script标签/import
